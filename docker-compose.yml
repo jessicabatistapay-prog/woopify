@@ -1,0 +1,52 @@
+# Woo Admin backend — chạy trên VPS: docker compose up -d
+# Đặt sau reverse proxy HTTPS (Caddy/Traefik/Nginx hoặc Coolify). Xem README.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wooadmin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Đặt POSTGRES_PASSWORD trong .env}
+      POSTGRES_DB: wooadmin
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wooadmin"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://wooadmin:${POSTGRES_PASSWORD}@db:5432/wooadmin
+      RUN_WORKER: "false"
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${API_PORT:-3000}:3000" # chỉ mở nội bộ; reverse proxy HTTPS trỏ vào đây
+
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    command: ["node", "dist/worker.js"]
+    environment:
+      DATABASE_URL: postgres://wooadmin:${POSTGRES_PASSWORD}@db:5432/wooadmin
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
+volumes:
+  db-data:
+  uploads:

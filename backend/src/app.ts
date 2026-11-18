@@ -75,7 +75,11 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
     }
   });
 
-  await app.register(cors, { origin: true });
+  await app.register(cors, {
+    origin: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'Accept'],
+  });
   await app.register(rateLimit, { global: false });
   await app.register(multipart, { limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
 

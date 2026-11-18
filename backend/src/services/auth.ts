@@ -13,11 +13,15 @@ export interface AuthContext {
 export async function createUser(email: string, password: string, name = '') {
   if (password.length < 10) throw new Error('Mật khẩu cần ít nhất 10 ký tự');
   const hash = await hashPassword(password);
-  return q1<{ id: number }>(
+  const row = await q1<{ id: number }>(
     `INSERT INTO users (email, name, password_hash) VALUES (lower($1), $2, $3)
      ON CONFLICT (email) DO UPDATE SET password_hash=EXCLUDED.password_hash, name=EXCLUDED.name RETURNING id`,
     [email.trim(), name, hash],
   );
+  // đổi mật khẩu → thu hồi mọi phiên cũ (vd. khi mất điện thoại)
+  await q('UPDATE sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL', [row!.id]);
+  await q(`UPDATE devices SET active=false, inactive_reason='password_changed' WHERE user_id=$1`, [row!.id]);
+  return row;
 }
 
 export async function login(email: string, password: string) {

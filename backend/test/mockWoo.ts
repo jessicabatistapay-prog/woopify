@@ -53,7 +53,8 @@ export class MockWoo {
   }
 
   tick(ms = 1000) {
-    this.clock += ms;
+    // đồng hồ không bao giờ chậm hơn giờ thật (như WooCommerce thật), nhưng luôn tăng giữa các lần ghi
+    this.clock = Math.max(this.clock + ms, Date.now());
     return new Date(this.clock);
   }
 
@@ -72,7 +73,7 @@ export class MockWoo {
   // ---------- dữ liệu ----------
   makeOrder(p: Partial<any> & { status: string; created?: Date }) {
     const id = p.id ?? this.nextId++;
-    const created = p.created ?? new Date(this.clock);
+    const created = p.created ?? this.tick(0);
     const items = p.line_items ?? [
       { id: id * 10 + 1, name: 'Túi tote da — Đen', product_id: 501, variation_id: 601, quantity: 1, subtotal: '119.00', total: '119.00', sku: 'TOTE-BLK', price: 119, image: { src: 'https://img.example/tote.jpg' }, meta_data: [{ key: 'pa_color', value: 'black', display_key: 'Màu', display_value: 'Đen' }] },
       { id: id * 10 + 2, name: 'Ví mini', product_id: 503, variation_id: 0, quantity: 1, subtotal: '20.00', total: '20.00', sku: 'WAL-MINI', price: 20, image: { src: '' } },
