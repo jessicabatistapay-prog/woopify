@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+backend/uploads/
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
+mobile/ios/
+mobile/android/
+*.log
+.DS_Store
