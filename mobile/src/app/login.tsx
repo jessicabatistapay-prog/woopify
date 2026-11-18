@@ -9,7 +9,9 @@ import { ApiError } from '../api/client';
 
 export default function Login() {
   const { signIn, startDemo, notice, baseUrl: lastUrl } = useSession();
-  const [baseUrl, setBaseUrl] = useState(lastUrl ?? process.env.EXPO_PUBLIC_API_URL ?? '');
+  // Bản web chạy cùng địa chỉ với backend → điền sẵn địa chỉ trang hiện tại
+  const webOrigin = Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.origin : '';
+  const [baseUrl, setBaseUrl] = useState(lastUrl || process.env.EXPO_PUBLIC_API_URL || webOrigin);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
