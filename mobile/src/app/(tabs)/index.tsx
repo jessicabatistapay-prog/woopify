@@ -76,33 +76,43 @@ export default function Overview() {
         ))}
       </ScrollView>
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        <Ionicons name="globe-outline" size={16} color={colors.textMuted} />
-        <Txt muted size="xs" style={{ flex: 1 }}>
-          {d.range.label} · Giờ website: {tzLabel(d.timezone, d.timezoneOffset)}. Ngày được tính theo giờ này, không theo giờ điện thoại.
-        </Txt>
+      {/* Một dòng gọn: kỳ báo cáo + múi giờ website (chạm để xem giải thích) + đổi tiền tệ nếu có nhiều loại */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Pressable
+          onPress={() => setSheet('definitions')}
+          accessibilityRole="button"
+          accessibilityLabel={`Kỳ ${d.range.label}, giờ website ${tzLabel(d.timezone, d.timezoneOffset)}. Chạm để xem cách tính`}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 }}
+        >
+          <Ionicons name="globe-outline" size={14} color={colors.textSubtle} />
+          <Txt muted size="xs" numberOfLines={1}>
+            {d.range.label} · GMT{d.timezoneOffset}
+          </Txt>
+          <Ionicons name="information-circle-outline" size={14} color={colors.textSubtle} />
+        </Pressable>
+        {d.currencies.length > 1
+          ? d.currencies.map((c) => (
+              <Pressable
+                key={c.currency}
+                onPress={() => setCurrency(c.currency)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: c.currency === m.currency }}
+                style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: c.currency === m.currency ? colors.primary : colors.card, borderWidth: 1, borderColor: c.currency === m.currency ? colors.primary : colors.border }}
+              >
+                <Txt size="xs" bold style={{ color: c.currency === m.currency ? '#fff' : colors.text }}>
+                  {c.currency}
+                </Txt>
+              </Pressable>
+            ))
+          : null}
       </View>
 
       {!d.coverage.complete ? (
         <Banner
           tone="info"
           icon="sync-outline"
-          title="Đang đồng bộ lịch sử lần đầu"
-          text={`Đã tải ${d.coverage.synced}${d.coverage.total ? `/${d.coverage.total}` : ''} đơn. Số liệu đầy đủ từ ${shopTime(d.coverage.completeFrom, d.timezone, 'dd/MM/yyyy HH:mm')} đến nay; trước mốc này có thể còn thiếu.`}
+          text={`Đang đồng bộ lịch sử: đủ dữ liệu từ ${shopTime(d.coverage.completeFrom, d.timezone, 'dd/MM HH:mm')} (${d.coverage.synced}${d.coverage.total ? `/${d.coverage.total}` : ''} đơn).`}
         />
-      ) : null}
-
-      {d.currencies.length > 1 ? (
-        <View style={{ gap: 6 }}>
-          <Txt muted size="xs">
-            Shop có đơn bằng nhiều loại tiền — số liệu tách riêng, không quy đổi:
-          </Txt>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {d.currencies.map((c) => (
-              <Chip key={c.currency} label={c.currency} selected={c.currency === m.currency} onPress={() => setCurrency(c.currency)} />
-            ))}
-          </View>
-        </View>
       ) : null}
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.md }}>
@@ -125,6 +135,17 @@ export default function Overview() {
         />
         <Kpi label="Giá trị đơn TB" value={money(m.avgOrderValue, m.currency)} sub={`${m.ordersCount} đơn được tính`} onPress={() => setSheet('definitions')} hint="Xem định nghĩa" />
       </View>
+
+      <Card onPress={() => router.push('/reports')} accessibilityLabel="Mở báo cáo chi tiết và Live" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: space.md }}>
+        <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: '#12B76A' }} />
+        <View style={{ flex: 1 }}>
+          <Txt bold>Live & báo cáo chi tiết</Txt>
+          <Txt muted size="xs">
+            Người đang xem, tỉ lệ chuyển đổi, sản phẩm, khu vực, khách hàng
+          </Txt>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={colors.textSubtle} />
+      </Card>
 
       {d.pendingPayment || d.onHold ? (
         <Card style={{ paddingVertical: 4 }}>
@@ -218,6 +239,10 @@ export default function Overview() {
           </View>
         ) : (
           <View style={{ gap: 12 }}>
+            <View style={{ gap: 2 }}>
+              <Txt bold>Múi giờ</Txt>
+              <Txt muted>Ngày được tính theo giờ website: {tzLabel(d.timezone, d.timezoneOffset)} — không theo giờ điện thoại của bạn.</Txt>
+            </View>
             {d.definitions.map((x) => (
               <View key={x.term} style={{ gap: 2 }}>
                 <Txt bold>{x.term}</Txt>

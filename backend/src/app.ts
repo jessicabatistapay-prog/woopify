@@ -15,6 +15,7 @@ import {
   checkShop,
   ensureWebhooks,
   getShop,
+  getShopById,
   publicShop,
   refreshShopMeta,
   requireShop,
@@ -29,6 +30,7 @@ import {
   listCategories,
   listProducts,
   publishProduct,
+  updateProductInfo,
   updateProductOrVariation,
 } from './services/products.js';
 import { getDevice, registerDevice, unregisterDevice, updatePrefs } from './services/devices.js';
@@ -36,6 +38,23 @@ import { createTestNotification } from './services/push.js';
 import { receiveWebhook } from './services/webhooks.js';
 import { startInitialSync, syncStatus } from './services/sync.js';
 import { enqueue } from './jobs/queue.js';
+import { collect, liveReport, salesReport, trackerStatus, trackerToken, type CollectEvent } from './services/reports.js';
+import {
+  deleteCoupon,
+  getCoupon,
+  getCustomer,
+  listCoupons,
+  listCustomers,
+  paymentGateways,
+  saveCoupon,
+  settingGroup,
+  settingGroups,
+  shippingZones,
+  updateCustomer,
+  updatePaymentGateway,
+  updateSettingGroup,
+  updateShippingMethod,
+} from './services/store.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -62,6 +81,10 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
   });
 
   // Giữ raw body để kiểm tra chữ ký webhook
+  app.addContentTypeParser('text/plain', { parseAs: 'buffer' }, (req, body, done) => {
+    req.rawBody = body as Buffer;
+    done(null, {});
+  });
   app.addContentTypeParser(['application/json', 'application/x-www-form-urlencoded'], { parseAs: 'buffer' }, (req, body, done) => {
     req.rawBody = body as Buffer;
     if (req.headers['content-type']?.startsWith('application/x-www-form-urlencoded')) return done(null, {});
@@ -119,6 +142,23 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
     const u = await q1<any>('SELECT * FROM uploads WHERE id=$1', [id]);
     if (!u) return reply.status(404).send();
     return reply.type(u.mime).send(fs.createReadStream(path.join(config().UPLOAD_DIR, u.id)));
+  });
+
+  // ---------- Thu thập lượt truy cập (plugin Woo Admin Tracker, công khai, xác thực bằng token) ----------
+  app.post('/t/:shopId', { config: { rateLimit: { max: 600, timeWindow: '1 minute' } } }, async (req, reply) => {
+    reply.header('Access-Control-Allow-Origin', '*');
+    const shop = await getShopById(Number((req.params as any).shopId));
+    let body: any = req.body;
+    if (req.rawBody && (!body || !Object.keys(body).length)) {
+      try {
+        body = JSON.parse(req.rawBody.toString('utf8'));
+      } catch {
+        body = {};
+      }
+    }
+    if (!shop || !body || body.k !== trackerToken(shop)) return reply.status(204).send();
+    await collect(shop, body as CollectEvent).catch(() => undefined);
+    return reply.status(204).send();
   });
 
   // ---------- Auth ----------
@@ -298,6 +338,90 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
 
     api.post('/api/products/:id/publish', async (req) => publishProduct(await requireShop(), Number((req.params as any).id)));
 
+    api.put('/api/products/:id/info', async (req) => {
+      const b = z
+        .object({
+          name: z.string().optional(),
+          sku: z.string().optional(),
+          shortDescription: z.string().optional(),
+          description: z.string().optional(),
+          status: z.enum(['draft', 'publish', 'private', 'pending']).optional(),
+          categoryIds: z.array(z.number()).optional(),
+          featured: z.boolean().optional(),
+          catalogVisibility: z.enum(['visible', 'catalog', 'search', 'hidden']).optional(),
+          expectedModified: z.string().optional(),
+          force: z.boolean().optional(),
+        })
+        .parse(req.body);
+      return updateProductInfo(await requireShop(), Number((req.params as any).id), b);
+    });
+
+    // ---------- Báo cáo ----------
+    api.get('/api/reports/sales', async (req) => {
+      const qy = z
+        .object({ range: z.enum(['today', 'yesterday', '7d', '30d', 'custom']).default('30d'), from: z.string().optional(), to: z.string().optional(), currency: z.string().optional() })
+        .parse(req.query);
+      return salesReport(await requireShop(), qy.range as RangeKey, qy.from, qy.to, qy.currency);
+    });
+    api.get('/api/reports/live', async () => liveReport(await requireShop()));
+    api.get('/api/tracker', async () => {
+      const shop = await requireShop();
+      return { endpoint: `${config().PUBLIC_URL.replace(/\/+$/, '')}/t/${shop.id}`, token: trackerToken(shop), ...(await trackerStatus(shop)) };
+    });
+
+    // ---------- Quản lý cửa hàng ----------
+    api.get('/api/store/settings', async () => settingGroups(await requireShop()));
+    api.get('/api/store/settings/:group', async (req) => settingGroup(await requireShop(), (req.params as any).group));
+    api.put('/api/store/settings/:group', async (req) => {
+      const b = z.object({ updates: z.array(z.object({ id: z.string(), value: z.any() })).min(1).max(50) }).parse(req.body);
+      return updateSettingGroup(await requireShop(), (req.params as any).group, b.updates);
+    });
+    api.get('/api/store/payment-gateways', async () => paymentGateways(await requireShop()));
+    api.put('/api/store/payment-gateways/:id', async (req) => {
+      const b = z
+        .object({ enabled: z.boolean().optional(), title: z.string().optional(), description: z.string().optional(), settings: z.record(z.string(), z.any()).optional() })
+        .parse(req.body);
+      return updatePaymentGateway(await requireShop(), (req.params as any).id, b);
+    });
+    api.get('/api/store/shipping-zones', async () => shippingZones(await requireShop()));
+    api.put('/api/store/shipping-zones/:zone/methods/:instance', async (req) => {
+      const b = z.object({ enabled: z.boolean().optional(), settings: z.record(z.string(), z.any()).optional() }).parse(req.body);
+      return updateShippingMethod(await requireShop(), Number((req.params as any).zone), Number((req.params as any).instance), b);
+    });
+    const couponSchema = z.object({
+      code: z.string().optional(),
+      discountType: z.enum(['percent', 'fixed_cart', 'fixed_product']).optional(),
+      amount: z.string().optional(),
+      description: z.string().optional(),
+      dateExpires: z.string().nullable().optional(),
+      minimumAmount: z.string().optional(),
+      usageLimit: z.number().int().nullable().optional(),
+      usageLimitPerUser: z.number().int().nullable().optional(),
+      individualUse: z.boolean().optional(),
+      freeShipping: z.boolean().optional(),
+      status: z.enum(['publish', 'draft']).optional(),
+    });
+    api.get('/api/store/coupons', async (req) => {
+      const qy = z.object({ q: z.string().optional(), page: z.coerce.number().default(1) }).parse(req.query);
+      return listCoupons(await requireShop(), qy.q, qy.page);
+    });
+    api.get('/api/store/coupons/:id', async (req) => getCoupon(await requireShop(), Number((req.params as any).id)));
+    api.post('/api/store/coupons', async (req) => saveCoupon(await requireShop(), null, couponSchema.parse(req.body)));
+    api.put('/api/store/coupons/:id', async (req) => saveCoupon(await requireShop(), Number((req.params as any).id), couponSchema.parse(req.body)));
+    api.delete('/api/store/coupons/:id', async (req) => deleteCoupon(await requireShop(), Number((req.params as any).id)));
+    api.get('/api/store/customers', async (req) => {
+      const qy = z.object({ q: z.string().optional(), page: z.coerce.number().default(1) }).parse(req.query);
+      return listCustomers(await requireShop(), qy.q, qy.page);
+    });
+    api.get('/api/store/customers/:id', async (req) => getCustomer(await requireShop(), Number((req.params as any).id)));
+    api.put('/api/store/customers/:id', async (req) => {
+      const addr = z.record(z.string(), z.string());
+      const b = z
+        .object({ firstName: z.string().optional(), lastName: z.string().optional(), email: z.string().email().optional(), billing: addr.optional(), shipping: addr.optional() })
+        .parse(req.body);
+      return updateCustomer(await requireShop(), Number((req.params as any).id), b);
+    });
+
     api.post('/api/uploads', async (req) => {
       const file = await req.file();
       if (!file) throw new AppError(400, 'no_file', 'Thiếu ảnh');
@@ -311,7 +435,12 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
     });
 
     // ---------- Devices & notifications ----------
-    const prefsSchema = z.object({ notifyNewOrder: z.boolean().optional(), notifyPaid: z.boolean().optional(), hideAmount: z.boolean().optional() });
+    const prefsSchema = z.object({
+      notifyNewOrder: z.boolean().optional(),
+      notifyPaid: z.boolean().optional(),
+      hideAmount: z.boolean().optional(),
+      sound: z.enum(['kaching', 'default']).optional(),
+    });
     api.put('/api/devices', async (req) => {
       const b = z
         .object({

@@ -218,6 +218,9 @@ export interface Product {
   images: string[];
   categories: { id: number; name: string }[];
   shortDescription: string;
+  description?: string;
+  featured?: boolean;
+  catalogVisibility?: string;
   dateModified: string;
   permalink: string | null;
   adminUrl: string;
@@ -258,10 +261,13 @@ export interface Category {
   count: number;
 }
 
+export type NotificationSound = 'kaching' | 'default';
+
 export interface DevicePrefs {
   notifyNewOrder: boolean;
   notifyPaid: boolean;
   hideAmount: boolean;
+  sound: NotificationSound;
 }
 
 export interface DeviceInfo {
@@ -306,7 +312,7 @@ export interface Diagnostics {
   expoAccessTokenConfigured: boolean;
 }
 
-export interface Api {
+export interface Api extends StoreApi {
   mode: 'real' | 'demo';
   logout(): Promise<void>;
   getShop(): Promise<ShopResponse>;
@@ -336,4 +342,199 @@ export interface Api {
   markNotificationsRead(input: { ids?: number[]; all?: boolean }): Promise<void>;
   sendTestNotification(installationId: string): Promise<{ sent: number; errors: { error: string }[] }>;
   diagnostics(installationId: string): Promise<Diagnostics>;
+}
+
+// ---------- Báo cáo ----------
+export interface RevenueRow {
+  name: string;
+  orders?: number;
+  qty?: number;
+  revenue: number;
+  id?: number;
+  code?: string;
+  image_url?: string | null;
+  sku?: string;
+  label?: string;
+  product_id?: number;
+}
+
+export interface FunnelStep {
+  key: string;
+  label: string;
+  count: number;
+  rate: number;
+}
+
+export type Tracking =
+  | { enabled: false }
+  | {
+      enabled: true;
+      sessions: number;
+      pageviews: number;
+      mobileShare: number;
+      conversionRate: number;
+      ordersPerSession: number;
+      trackingSince?: string;
+      funnel: FunnelStep[];
+      sources: { name: string; sessions: number; purchased: number }[];
+      landing: { name: string; sessions: number }[];
+    };
+
+export interface SalesReport {
+  range: { key: RangeKey; start: string; end: string; label: string };
+  currency: string;
+  timezone: string;
+  byProduct: RevenueRow[];
+  byVariation: RevenueRow[];
+  byCategory: RevenueRow[];
+  byCountry: RevenueRow[];
+  byState: RevenueRow[];
+  byPayment: RevenueRow[];
+  byStatus: (RevenueRow & { status: string })[];
+  coupons: { code: string; orders: number; discount: number }[];
+  customers: { new: number; returning: number; newRevenue: number; returningRevenue: number };
+  attribution: { available: boolean; rows: { name: string; orders: number; revenue: number }[] };
+  tracking: Tracking;
+}
+
+export interface LiveReport {
+  now: string;
+  timezone: string;
+  currency: string;
+  today: { orders: number; sales: number };
+  yesterdaySameTime: { orders: number; sales: number };
+  ordersLast30Min: number;
+  checkoutsActive: number | null;
+  cumulativeToday: number[];
+  cumulativeYesterday: number[];
+  recentOrders: (OrderSummary & { state: string | null; country: string | null })[];
+  visitors:
+    | { enabled: false }
+    | { enabled: true; activeNow: number; withCart: number; inCheckout: number; sessionsToday: number; conversionToday: number; topPages: { name: string; n: number }[] };
+}
+
+export interface TrackerInfo {
+  endpoint: string;
+  token: string;
+  lastEventAt: string | null;
+  sessions: number;
+}
+
+// ---------- Quản lý cửa hàng ----------
+export interface SettingField {
+  id: string;
+  label: string;
+  description: string;
+  tip: string;
+  type: string;
+  value: unknown;
+  default: unknown;
+  options: Record<string, string> | null;
+  placeholder: string;
+  editable: boolean;
+}
+
+export interface SettingGroup {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface PaymentGateway {
+  id: string;
+  title: string;
+  description: string;
+  enabled: boolean;
+  order: number;
+  methodTitle: string;
+  methodDescription: string;
+  settings: SettingField[];
+}
+
+export interface ShippingMethod {
+  instanceId: number;
+  methodId: string;
+  title: string;
+  enabled: boolean;
+  order: number;
+  settings: SettingField[];
+}
+
+export interface ShippingZone {
+  id: number;
+  name: string;
+  order: number;
+  locations: { code: string; type: string }[];
+  methods: ShippingMethod[];
+}
+
+export interface Coupon {
+  id: number;
+  code: string;
+  status: string;
+  discountType: 'percent' | 'fixed_cart' | 'fixed_product';
+  amount: string;
+  description: string;
+  dateExpires: string | null;
+  usageCount: number;
+  usageLimit: number | null;
+  usageLimitPerUser: number | null;
+  minimumAmount: string;
+  individualUse: boolean;
+  freeShipping: boolean;
+}
+
+export type CouponInput = Partial<Omit<Coupon, 'id' | 'usageCount' | 'status'>> & { status?: 'publish' | 'draft' };
+
+export interface Customer {
+  id: number;
+  email: string;
+  firstName: string;
+  lastName: string;
+  name: string;
+  dateCreated: string | null;
+  isPayingCustomer: boolean;
+  billing: Record<string, string>;
+  shipping: Record<string, string>;
+  ordersCount: number;
+  totalSpent: number;
+  currency: string;
+  lastOrderAt?: string | null;
+}
+
+export interface CustomerDetail extends Customer {
+  orders: OrderSummary[];
+}
+
+export interface ProductInfoPatch {
+  name?: string;
+  sku?: string;
+  shortDescription?: string;
+  description?: string;
+  status?: 'draft' | 'publish' | 'private' | 'pending';
+  categoryIds?: number[];
+  featured?: boolean;
+  catalogVisibility?: 'visible' | 'catalog' | 'search' | 'hidden';
+  expectedModified?: string;
+}
+
+export interface StoreApi {
+  salesReport(range: RangeKey, from?: string, to?: string, currency?: string): Promise<SalesReport>;
+  liveReport(): Promise<LiveReport>;
+  trackerInfo(): Promise<TrackerInfo>;
+  settingGroups(): Promise<SettingGroup[]>;
+  settingGroup(id: string): Promise<SettingField[]>;
+  updateSettings(group: string, updates: { id: string; value: unknown }[]): Promise<SettingField[]>;
+  paymentGateways(): Promise<PaymentGateway[]>;
+  updatePaymentGateway(id: string, body: { enabled?: boolean; settings?: Record<string, unknown> }): Promise<PaymentGateway>;
+  shippingZones(): Promise<ShippingZone[]>;
+  updateShippingMethod(zoneId: number, instanceId: number, body: { enabled?: boolean; settings?: Record<string, unknown> }): Promise<ShippingMethod>;
+  listCoupons(q?: string, page?: number): Promise<Paged<Coupon>>;
+  getCoupon(id: number): Promise<Coupon>;
+  saveCoupon(id: number | null, input: CouponInput): Promise<Coupon>;
+  deleteCoupon(id: number): Promise<void>;
+  listCustomers(q?: string, page?: number): Promise<Paged<Customer>>;
+  getCustomer(id: number): Promise<CustomerDetail>;
+  updateCustomer(id: number, body: { firstName?: string; lastName?: string; email?: string; billing?: Record<string, string>; shipping?: Record<string, string> }): Promise<CustomerDetail>;
+  updateProductInfo(id: number, patch: ProductInfoPatch): Promise<{ product: Product }>;
 }

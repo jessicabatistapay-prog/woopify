@@ -35,7 +35,8 @@ const config: ExpoConfig = {
     'expo-router',
     'expo-secure-store',
     'expo-web-browser',
-    ['expo-notifications', { color: '#1E4D3A', defaultChannel: 'orders' }],
+    // Âm “ka-ching” tự tạo (không dùng âm của Shopify) — cần build lại app khi đổi file âm thanh
+    ['expo-notifications', { color: '#1E4D3A', defaultChannel: 'orders_kaching', sounds: ['./assets/sounds/ka_ching.wav'] }],
     ['expo-image-picker', { photosPermission: 'Cho phép chọn ảnh để thêm vào sản phẩm.' }],
   ],
   experiments: { typedRoutes: false },

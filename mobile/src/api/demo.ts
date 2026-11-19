@@ -2,7 +2,9 @@ import { DateTime } from 'luxon';
 import { aggregate, computeRange, type DemoAggOrder } from '../lib/analytics';
 import { STATUS_LABELS } from '../lib/format';
 import { ApiError } from './client';
+import { createDemoStore } from './demoStore';
 import type {
+  StoreApi,
   Api,
   Category,
   CheckResult,
@@ -32,7 +34,7 @@ function rng(seed: number) {
   };
 }
 
-interface DemoProduct extends Product {
+export interface DemoProduct extends Product {
   categoryIds: number[];
 }
 
@@ -127,7 +129,7 @@ const CUSTOMERS = [
   ['Lauren', 'Reed', 'Portland', 'OR', '97205'],
 ];
 
-interface DemoOrder {
+export interface DemoOrder {
   id: number;
   number: string;
   status: string;
@@ -373,8 +375,8 @@ export function createDemoApi(hooks: { localNotify?: (title: string, body: strin
     ],
   };
 
-  return {
-    mode: 'demo',
+  const base: Omit<Api, keyof StoreApi> = {
+    mode: 'demo' as const,
     logout: async () => undefined,
     getShop: async () => ({
       connected: true,
@@ -565,7 +567,7 @@ export function createDemoApi(hooks: { localNotify?: (title: string, body: strin
         permission: input.permission,
         active: true,
         inactiveReason: null,
-        prefs: device?.prefs ?? { notifyNewOrder: true, notifyPaid: false, hideAmount: false },
+        prefs: device?.prefs ?? { notifyNewOrder: true, notifyPaid: false, hideAmount: false, sound: 'kaching' },
         lastRegisteredAt: new Date().toISOString(),
         lastPushAt: null,
         lastPushStatus: null,
@@ -617,6 +619,7 @@ export function createDemoApi(hooks: { localNotify?: (title: string, body: strin
       expoAccessTokenConfigured: false,
     }),
   };
+  return { ...base, ...createDemoStore({ orders, products, variations, cats: CATS, total, tz: TZ }) };
 }
 
 export const DEFINITIONS = [

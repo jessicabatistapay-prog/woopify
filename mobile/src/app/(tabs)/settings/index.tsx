@@ -6,12 +6,12 @@ import type { DeviceInfo, DevicePrefs, ShopResponse } from '../../../api/types';
 import { colors, space } from '../../../lib/theme';
 import { relativeTime, tzLabel } from '../../../lib/format';
 import { installationId } from '../../../lib/storage';
-import { registerDevice } from '../../../lib/push';
+import { previewSound, registerDevice, SOUND_CHANNELS } from '../../../lib/push';
 import { useApi, useSession } from '../../../state/session';
 import { loadShop } from '../../../state/shop';
 import { useResource } from '../../../state/useResource';
 import { StatusStrip } from '../../../ui/app';
-import { Banner, Button, Card, Divider, ErrorState, Loading, Row, SectionTitle, Txt } from '../../../ui/kit';
+import { Banner, Button, Card, Chip, Divider, ErrorState, Loading, Row, SectionTitle, Txt } from '../../../ui/kit';
 
 export default function Settings() {
   const api = useApi();
@@ -33,7 +33,7 @@ export default function Settings() {
     })();
   }, [api]);
 
-  const setPref = async (k: keyof DevicePrefs, v: boolean) => {
+  const setPref = async <K extends keyof DevicePrefs>(k: K, v: DevicePrefs[K]) => {
     if (!device) return;
     setSavingPref(k);
     const prev = device;
@@ -93,6 +93,14 @@ export default function Settings() {
         </Card>
       )}
 
+      {r.connected ? (
+        <Card style={{ gap: 0, paddingVertical: 4 }}>
+          <Row icon="storefront-outline" label="Quản lý cửa hàng" onPress={() => router.push('/settings/store')} />
+          <Divider />
+          <Row icon="bar-chart-outline" label="Báo cáo & Live" onPress={() => router.push('/reports')} />
+        </Card>
+      ) : null}
+
       <SectionTitle>Thông báo</SectionTitle>
       <Card style={{ gap: 0 }}>
         {!device ? <Txt muted>Đang đăng ký thiết bị…</Txt> : null}
@@ -101,6 +109,30 @@ export default function Settings() {
         <PrefRow label="Báo khi đơn đã thanh toán" sub="Thông báo riêng, tiêu đề “Đã thanh toán #…”" value={device?.prefs.notifyPaid ?? false} onChange={(v) => setPref('notifyPaid', v)} disabled={!device || savingPref !== null} />
         <Divider />
         <PrefRow label="Ẩn số tiền trên màn hình khóa" sub="Chỉ hiện mã đơn, ví dụ “Đơn mới #10428”" value={device?.prefs.hideAmount ?? false} onChange={(v) => setPref('hideAmount', v)} disabled={!device || savingPref !== null} />
+        <Divider />
+        <View style={{ paddingVertical: 10, gap: 8 }}>
+          <Txt bold>Âm thanh đơn mới</Txt>
+          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+            {(Object.keys(SOUND_CHANNELS) as (keyof typeof SOUND_CHANNELS)[]).map((k) => (
+              <Chip key={k} label={SOUND_CHANNELS[k].label} selected={(device?.prefs.sound ?? 'kaching') === k} onPress={() => setPref('sound', k)} />
+            ))}
+          </View>
+          <Button
+            title="Nghe thử"
+            icon="volume-high-outline"
+            variant="ghost"
+            compact
+            style={{ alignSelf: 'flex-start', minHeight: 36, paddingHorizontal: 0 }}
+            onPress={() =>
+              Platform.OS === 'web'
+                ? Alert.alert('', 'Nghe thử chỉ chạy trên app cài trên điện thoại.')
+                : previewSound(device?.prefs.sound ?? 'kaching').catch((e) => Alert.alert('Không phát được', (e as Error).message))
+            }
+          />
+          <Txt muted size="xs">
+            Thông báo sẽ hiện sau 2 giây. Hãy tắt chế độ im lặng của điện thoại.
+          </Txt>
+        </View>
         <Divider />
         <Row icon="notifications-outline" label="Kiểm tra thông báo" onPress={() => router.push('/settings/push')} />
         <Row icon="time-outline" label="Lịch sử thông báo" onPress={() => router.push('/notifications')} />

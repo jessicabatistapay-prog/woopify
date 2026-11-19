@@ -6,7 +6,12 @@ import * as Notifications from 'expo-notifications';
 import type { Api } from '../api/types';
 import { installationId } from './storage';
 
-export const ORDER_CHANNEL = 'orders';
+/** Kênh Android: âm thanh của kênh cố định sau khi tạo, nên mỗi âm thanh là một kênh riêng (khớp backend SOUNDS) */
+export const SOUND_CHANNELS = {
+  kaching: { channel: 'orders_kaching', file: 'ka_ching.wav', label: 'Ka-ching (tiền về)' },
+  default: { channel: 'orders', file: 'default', label: 'Âm mặc định của máy' },
+} as const;
+export const ORDER_CHANNEL = SOUND_CHANNELS.kaching.channel;
 
 let configured = false;
 export function configureNotifications() {
@@ -21,8 +26,16 @@ export function configureNotifications() {
     }),
   });
   if (Platform.OS === 'android') {
-    Notifications.setNotificationChannelAsync(ORDER_CHANNEL, {
-      name: 'Đơn hàng',
+    Notifications.setNotificationChannelAsync(SOUND_CHANNELS.kaching.channel, {
+      name: 'Đơn hàng (ka-ching)',
+      description: 'Đơn mới và đơn đã thanh toán',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: SOUND_CHANNELS.kaching.file,
+      vibrationPattern: [0, 120, 80, 120],
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
+    }).catch(() => undefined);
+    Notifications.setNotificationChannelAsync(SOUND_CHANNELS.default.channel, {
+      name: 'Đơn hàng (âm mặc định)',
       description: 'Đơn mới và đơn đã thanh toán',
       importance: Notifications.AndroidImportance.HIGH,
       sound: 'default',
@@ -97,13 +110,19 @@ export function watchTokenChanges(api: Api) {
   return () => sub.remove();
 }
 
-export async function localNotify(title: string, body: string, data: Record<string, unknown>) {
+export async function localNotify(title: string, body: string, data: Record<string, unknown>, sound: keyof typeof SOUND_CHANNELS = 'kaching') {
   if (Platform.OS === 'web') return;
   configureNotifications();
+  const s = SOUND_CHANNELS[sound];
   await Notifications.scheduleNotificationAsync({
-    content: { title, body, data, sound: 'default' },
-    trigger: Platform.OS === 'android' ? { channelId: ORDER_CHANNEL, seconds: 2, type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL } : { seconds: 2, type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL },
+    content: { title, body, data, sound: s.file },
+    trigger: Platform.OS === 'android' ? { channelId: s.channel, seconds: 2, type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL } : { seconds: 2, type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL },
   });
+}
+
+/** Nghe thử âm thanh: phát một thông báo cục bộ sau 2 giây (cần bản cài development build, không chạy trên web) */
+export async function previewSound(sound: keyof typeof SOUND_CHANNELS) {
+  await localNotify('Đơn mới #10428 · 149,00 USD', `Nghe thử: ${SOUND_CHANNELS[sound].label}`, { type: 'test' }, sound);
 }
 
 export function openSystemSettingsHint() {

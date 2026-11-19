@@ -9,7 +9,7 @@ export interface ExpoMessage {
   title: string;
   body: string;
   data: Record<string, unknown>;
-  sound: 'default';
+  sound: string;
   channelId: string;
   priority: 'high';
 }
@@ -49,8 +49,15 @@ export async function sendExpo(messages: ExpoMessage[]): Promise<ExpoTicket[]> {
   return out;
 }
 
+/** Tên file âm thanh đóng gói trong app (mobile/assets/sounds) và kênh Android tương ứng */
+export const SOUNDS: Record<string, { ios: string; channel: string }> = {
+  kaching: { ios: 'ka_ching.wav', channel: 'orders_kaching' },
+  default: { ios: 'default', channel: 'orders' },
+};
+
 interface DeviceRow {
   id: string;
+  sound: string;
   push_token: string | null;
   hide_amount: boolean;
   notify_new_order: boolean;
@@ -117,8 +124,8 @@ export async function deliverNotification(notificationId: number, onlyDeviceId?:
     title: d.hide_amount ? titlePrivate : title,
     body,
     data: { ...n.data, notificationId: n.id },
-    sound: 'default',
-    channelId: 'orders',
+    sound: (SOUNDS[d.sound] ?? SOUNDS.kaching).ios,
+    channelId: (SOUNDS[d.sound] ?? SOUNDS.kaching).channel,
     priority: 'high',
   }));
 

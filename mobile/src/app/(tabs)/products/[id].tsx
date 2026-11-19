@@ -80,6 +80,14 @@ export default function ProductScreen() {
             </View>
           </View>
           {p.status === 'draft' ? <Button title="Đăng bán" icon="rocket-outline" onPress={publish} loading={publishing} disabled={!online} /> : null}
+          <Button
+            title="Sửa thông tin (tên, mô tả, danh mục, trạng thái)"
+            icon="create-outline"
+            variant="secondary"
+            compact
+            onPress={() => router.push({ pathname: '/products/info', params: { id: String(p.id) } })}
+            disabled={!online || res.data.stale}
+          />
         </Card>
 
         {p.type !== 'variable' ? (

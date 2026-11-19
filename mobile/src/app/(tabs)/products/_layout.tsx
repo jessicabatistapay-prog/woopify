@@ -10,6 +10,7 @@ export default function ProductsStack() {
       <Stack.Screen name="[id]" options={{ title: 'Chi tiết sản phẩm' }} />
       <Stack.Screen name="edit" options={{ title: 'Sửa giá & tồn kho' }} />
       <Stack.Screen name="new" options={{ title: 'Tạo sản phẩm nháp' }} />
+      <Stack.Screen name="info" options={{ title: 'Thông tin sản phẩm' }} />
     </Stack>
   );
 }

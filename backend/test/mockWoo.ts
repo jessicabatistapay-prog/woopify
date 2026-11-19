@@ -33,6 +33,33 @@ export class MockWoo {
     { id: 13, name: 'Phụ kiện', parent: 0, count: 1 },
   ];
   tracking = new Map<number, any[]>();
+  settings: Record<string, any[]> = {
+    general: [
+      { id: 'woocommerce_store_address', label: 'Địa chỉ', type: 'text', value: '12 Main St', default: '' },
+      { id: 'woocommerce_currency', label: 'Tiền tệ', type: 'select', value: 'USD', default: 'USD', options: { USD: 'US dollar', CAD: 'Canadian dollar', EUR: 'Euro' } },
+      { id: 'woocommerce_calc_taxes', label: 'Bật thuế', type: 'checkbox', value: 'no', default: 'no' },
+      { id: 'woocommerce_price_num_decimals', label: 'Số chữ số thập phân', type: 'number', value: '2', default: '2' },
+    ],
+    products: [
+      { id: 'woocommerce_manage_stock', label: 'Quản lý tồn kho', type: 'checkbox', value: 'yes', default: 'yes' },
+      { id: 'woocommerce_notify_low_stock_amount', label: 'Ngưỡng sắp hết hàng', type: 'number', value: '2', default: '2' },
+    ],
+  };
+  gateways: any[] = [
+    { id: 'stripe', title: 'Thẻ tín dụng', description: '', order: 1, enabled: true, method_title: 'Stripe', method_description: '', settings: { title: { id: 'title', label: 'Tiêu đề', type: 'text', value: 'Thẻ tín dụng', default: '' } } },
+    { id: 'cod', title: 'Thanh toán khi nhận hàng', description: '', order: 2, enabled: false, method_title: 'COD', method_description: '', settings: { instructions: { id: 'instructions', label: 'Hướng dẫn', type: 'textarea', value: '', default: '' } } },
+  ];
+  zones: any[] = [
+    { id: 1, name: 'United States', order: 0, locations: [{ code: 'US', type: 'country' }], methods: [
+      { instance_id: 1, method_id: 'flat_rate', title: 'USPS Priority', enabled: true, order: 1, settings: { cost: { id: 'cost', label: 'Phí', type: 'text', value: '10', default: '' } } },
+      { instance_id: 2, method_id: 'free_shipping', title: 'Miễn phí', enabled: true, order: 2, settings: { min_amount: { id: 'min_amount', label: 'Đơn tối thiểu', type: 'price', value: '150', default: '' } } },
+    ] },
+    { id: 0, name: 'Locations not covered', order: 1, locations: [], methods: [] },
+  ];
+  coupons: any[] = [{ id: 901, code: 'welcome10', status: 'publish', discount_type: 'percent', amount: '10', usage_count: 3, date_expires: null, date_modified_gmt: '2026-11-01T00:00:00' }];
+  customers: any[] = [
+    { id: 71, email: 'emily@example.com', first_name: 'Emily', last_name: 'Carter', username: 'emily', date_created_gmt: '2025-01-01T00:00:00', is_paying_customer: true, billing: { city: 'Austin', country: 'US' }, shipping: {} },
+  ];
   requests: { method: string; path: string; body?: any }[] = [];
   /** Lần ghi tiếp theo khớp predicate: thực thi rồi cắt kết nối (mô phỏng mất mạng sau khi website đã lưu) */
   dropAfterWrite: ((method: string, path: string) => boolean) | null = null;
@@ -249,18 +276,6 @@ export class MockWoo {
     const qs = u.searchParams;
     let m: RegExpMatchArray | null;
 
-    if (p === '/wc/v3/settings/general') {
-      return reply(200, [
-        { id: 'woocommerce_currency', value: this.opts.currency },
-        { id: 'woocommerce_price_num_decimals', value: '2' },
-      ]);
-    }
-    if (p === '/wc/v3/settings/products') {
-      return reply(200, [
-        { id: 'woocommerce_manage_stock', value: 'yes' },
-        { id: 'woocommerce_notify_low_stock_amount', value: '2' },
-      ]);
-    }
     if (p === '/wc/v3/system_status') return reply(200, { environment: { version: '9.4.0' }, settings: { hpos_enabled: true } });
     if (p === '/wc/v3/reports/orders/totals') {
       return reply(200, ['pending', 'processing', 'on-hold', 'completed', 'cancelled', 'refunded', 'failed'].map((slug) => ({ slug, name: slug, total: 0 })));
@@ -354,6 +369,73 @@ export class MockWoo {
         if (body.stock_quantity !== undefined) v.stock_status = v.stock_quantity > 0 ? 'instock' : 'outofstock';
       }
       return reply(200, v);
+    }
+
+    // ---- Cài đặt / thanh toán / vận chuyển / mã giảm giá / khách hàng ----
+    if (p === '/wc/v3/settings') return reply(200, Object.keys(this.settings).map((id) => ({ id, label: id === 'general' ? 'Chung' : id, description: '', parent_id: '' })));
+    if ((m = p.match(/^\/wc\/v3\/settings\/([a-z_]+)\/batch$/)) && method === 'POST') {
+      const g = this.settings[m[1]];
+      const out = (body.update ?? []).map((u: any) => {
+        const f = g?.find((x) => x.id === u.id);
+        if (!f) return { id: u.id, error: { code: 'rest_setting_setting_invalid', message: 'Invalid setting.' } };
+        if (f.type === 'select' && f.options && !(String(u.value) in f.options)) return { id: u.id, error: { code: 'rest_setting_value_invalid', message: 'Giá trị không hợp lệ.' } };
+        f.value = u.value;
+        return f;
+      });
+      return reply(200, { update: out });
+    }
+    if ((m = p.match(/^\/wc\/v3\/settings\/([a-z_]+)$/))) {
+      const g = this.settings[m[1]];
+      return g ? reply(200, g) : reply(404, { code: 'rest_setting_setting_group_invalid', message: 'Invalid setting group.' });
+    }
+    if (p === '/wc/v3/payment_gateways') return reply(200, this.gateways);
+    if ((m = p.match(/^\/wc\/v3\/payment_gateways\/([a-z_]+)$/))) {
+      const g = this.gateways.find((x) => x.id === m![1]);
+      if (!g) return reply(404, { code: 'woocommerce_rest_payment_gateway_invalid', message: 'x' });
+      if (method === 'PUT') {
+        for (const k of ['enabled', 'title', 'description']) if (body[k] !== undefined) g[k] = body[k];
+        for (const [k, v] of Object.entries(body.settings ?? {})) if (g.settings[k]) g.settings[k].value = v;
+      }
+      return reply(200, g);
+    }
+    if (p === '/wc/v3/shipping/zones') return reply(200, this.zones.map(({ id, name, order }) => ({ id, name, order })));
+    if ((m = p.match(/^\/wc\/v3\/shipping\/zones\/(\d+)\/locations$/))) return reply(200, this.zones.find((z) => z.id === Number(m![1]))?.locations ?? []);
+    if ((m = p.match(/^\/wc\/v3\/shipping\/zones\/(\d+)\/methods$/))) return reply(200, this.zones.find((z) => z.id === Number(m![1]))?.methods ?? []);
+    if ((m = p.match(/^\/wc\/v3\/shipping\/zones\/(\d+)\/methods\/(\d+)$/))) {
+      const mt = this.zones.find((z) => z.id === Number(m![1]))?.methods.find((x: any) => x.instance_id === Number(m![2]));
+      if (!mt) return reply(404, { code: 'woocommerce_rest_shipping_zone_method_invalid', message: 'x' });
+      if (method === 'PUT') {
+        if (body.enabled !== undefined) mt.enabled = body.enabled;
+        for (const [k, v] of Object.entries(body.settings ?? {})) if (mt.settings[k]) mt.settings[k].value = v;
+      }
+      return reply(200, mt);
+    }
+    if (p === '/wc/v3/coupons') {
+      if (method === 'POST') {
+        if (this.coupons.some((c) => c.code === String(body.code).toLowerCase())) return reply(400, { code: 'woocommerce_rest_coupon_code_already_exists', message: 'The coupon code already exists' });
+        const c = { id: this.nextId++, usage_count: 0, status: 'publish', discount_type: 'fixed_cart', amount: '0', date_expires: null, ...body, code: String(body.code).toLowerCase(), date_modified_gmt: iso(this.tick()) };
+        this.coupons.push(c);
+        return reply(201, c);
+      }
+      const search = qs.get('search');
+      return this.page(res, this.coupons.filter((c) => !search || c.code.includes(search.toLowerCase())), qs);
+    }
+    if ((m = p.match(/^\/wc\/v3\/coupons\/(\d+)$/))) {
+      const i = this.coupons.findIndex((c) => c.id === Number(m![1]));
+      if (i < 0) return reply(404, { code: 'woocommerce_rest_shop_coupon_invalid_id', message: 'x' });
+      if (method === 'DELETE') return reply(200, this.coupons.splice(i, 1)[0]);
+      if (method === 'PUT') Object.assign(this.coupons[i], body, { date_modified_gmt: iso(this.tick()) });
+      return reply(200, this.coupons[i]);
+    }
+    if (p === '/wc/v3/customers') {
+      const search = qs.get('search');
+      return this.page(res, this.customers.filter((c) => !search || `${c.email} ${c.first_name} ${c.last_name}`.toLowerCase().includes(search.toLowerCase())), qs);
+    }
+    if ((m = p.match(/^\/wc\/v3\/customers\/(\d+)$/))) {
+      const c = this.customers.find((x) => x.id === Number(m![1]));
+      if (!c) return reply(404, { code: 'woocommerce_rest_invalid_id', message: 'x' });
+      if (method === 'PUT') Object.assign(c, body);
+      return reply(200, c);
     }
 
     if (p === '/wc/v3/webhooks') {

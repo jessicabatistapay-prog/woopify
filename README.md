@@ -28,6 +28,8 @@ Kế hoạch & kiến trúc chi tiết: [`docs/PLAN.md`](docs/PLAN.md).
 8. [Cài bản thử lên iPhone / Android](#8-cài-bản-thử-lên-iphone--android)
 9. [Kiểm tra nghiệm thu trên điện thoại thật](#9-kiểm-tra-nghiệm-thu-trên-điện-thoại-thật)
 10. [Cách tính số liệu](#10-cách-tính-số-liệu)
+    - [Báo cáo chi tiết, Live & tỉ lệ chuyển đổi](#báo-cáo-chi-tiết-live--tỉ-lệ-chuyển-đổi)
+    - [Quản lý cửa hàng trong app](#quản-lý-cửa-hàng-trong-app)
 11. [Phát triển, test, chạy cục bộ](#11-phát-triển-test-chạy-cục-bộ)
 12. [Xử lý sự cố](#12-xử-lý-sự-cố)
 
@@ -277,6 +279,51 @@ Số liệu do backend tự tổng hợp từ đơn đã đồng bộ, theo đ�
 Phí phụ thu (fee lines) không cộng vào doanh thu, giống Analytics. Múi giờ lấy từ `timezone_string` của WordPress. Nếu site dùng độ lệch thủ công (ví dụ UTC+7) thì dùng độ lệch đó. Múi giờ luôn hiện trên dashboard.
 
 ---
+
+### Báo cáo chi tiết, Live & tỉ lệ chuyển đổi
+
+Mở từ **Tổng quan → Live & báo cáo chi tiết** hoặc **Cài đặt → Báo cáo & Live**.
+
+| Tab | Nội dung | Nguồn dữ liệu |
+|---|---|---|
+| **Live** (tự làm mới 15 giây) | Người đang xem website, giỏ đang mở, đang ở bước thanh toán, doanh thu hôm nay so với cùng giờ hôm qua, biểu đồ cộng dồn theo giờ, đơn hôm nay | Đơn: WooCommerce. Người xem: plugin tracker |
+| **Bán hàng** | Sản phẩm / biến thể / danh mục bán chạy, khách mới & quay lại, quốc gia & bang, nguồn đơn (Order Attribution), phương thức thanh toán, mã giảm giá đã dùng, theo trạng thái | Đơn đã đồng bộ (không cần plugin) |
+| **Truy cập** | Tỉ lệ chuyển đổi, phiên, phễu (xem sản phẩm → giỏ → thanh toán → đặt hàng), nguồn truy cập, trang vào đầu tiên | Plugin tracker |
+
+**Vì sao cần plugin cho Live/chuyển đổi?** WooCommerce không ghi lượt truy cập, nên REST API không có số liệu này. Plugin `wordpress-plugin/woo-admin-tracker.zip` gửi lượt xem trang ẩn danh về backend:
+- Có gửi: mã phiên ngẫu nhiên, đường dẫn trang, nguồn truy cập (referrer, `utm_source`), loại thiết bị, bước mua hàng.
+- Không gửi: IP, tên, email, nội dung giỏ hàng.
+- Tôn trọng Do Not Track và GPC. Không đếm lượt xem của quản trị viên.
+
+Cài đặt:
+1. WordPress → **Plugin → Cài mới → Tải plugin lên** → chọn `woo-admin-tracker.zip` → **Kích hoạt**.
+2. Trong app: **Cài đặt → Quản lý cửa hàng → Theo dõi lượt truy cập**, sao chép **Endpoint** và **Token**.
+3. WordPress → **Cài đặt → Woo Admin Tracker**: dán hai giá trị trên → Lưu.
+4. Nếu dùng plugin cache (WP Rocket, LiteSpeed…): không cần loại trừ gì, vì script chạy phía trình duyệt.
+
+Tỉ lệ chuyển đổi = số phiên có đặt hàng ÷ tổng số phiên, cùng cách Shopify tính. Phiên kết thúc sau 30 phút không hoạt động.
+
+### Quản lý cửa hàng trong app
+
+**Cài đặt → Quản lý cửa hàng**. Mọi thao tác đi qua REST API chính thức, có bước xem trước “cũ → mới” và hiển thị giá trị WooCommerce xác nhận:
+
+| Mục | Làm được gì |
+|---|---|
+| Mã giảm giá | Tạo, sửa, bật/tắt, xóa. Loại giảm (%, số tiền, theo sản phẩm), hạn dùng, đơn tối thiểu, giới hạn lượt dùng, miễn phí vận chuyển |
+| Khách hàng | Tìm, xem tổng chi và đơn gần đây, sửa tên/email/địa chỉ giao hàng |
+| Thanh toán | Bật/tắt từng cổng thanh toán, sửa tiêu đề, mô tả và các tùy chọn của cổng |
+| Vận chuyển | Xem vùng vận chuyển, bật/tắt phương thức, sửa phí và đơn tối thiểu để miễn phí vận chuyển |
+| Cài đặt WooCommerce | Toàn bộ các nhóm trong WooCommerce → Cài đặt (Chung, Sản phẩm, Thuế, Tài khoản, Email, Nâng cao…). App tự dựng form theo từng loại trường |
+| Sản phẩm | Ngoài giá/tồn kho: tên, SKU, mô tả ngắn/chi tiết, trạng thái (đang bán, nháp, riêng tư), danh mục, nổi bật, hiển thị |
+
+Những phần REST API không hỗ trợ vẫn phải làm trên web: trang cài đặt riêng của plugin bên thứ ba, giao diện (theme), hoàn tiền qua cổng thanh toán, sửa ảnh hoặc bảng trong mô tả sản phẩm. Nút **“Mở trong WooCommerce Admin”** vẫn có ở đơn và sản phẩm.
+
+### Âm thanh thông báo đơn mới
+
+Mặc định là âm **“Ka-ching”** (tiếng tiền về). Âm này tự tổng hợp cho dự án, không dùng âm thanh của Shopify. File nằm ở `mobile/assets/sounds/ka_ching.wav`. Đổi trong **Cài đặt → Thông báo → Âm thanh đơn mới**, có nút **Nghe thử**.
+- iOS: backend gửi `sound: ka_ching.wav` trong push.
+- Android: mỗi âm thanh là một kênh thông báo riêng (`orders_kaching` / `orders`), vì Android khóa âm thanh của kênh sau khi tạo.
+- Muốn thay bằng âm khác: đặt file `.wav` (dưới 30 giây) cùng tên vào `mobile/assets/sounds/`, rồi **build lại app** (`eas build`). Âm thanh được đóng gói trong app nên không cập nhật OTA được.
 
 ## 11. Phát triển, test, chạy cục bộ
 

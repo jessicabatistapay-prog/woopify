@@ -73,6 +73,7 @@ function RootStack() {
         <Stack.Protected guard={signedIn}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="notifications" options={{ title: 'Thông báo', presentation: 'card' }} />
+          <Stack.Screen name="reports" options={{ title: 'Báo cáo' }} />
         </Stack.Protected>
         <Stack.Protected guard={!signedIn}>
           <Stack.Screen name="login" options={{ headerShown: false }} />

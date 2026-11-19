@@ -5,6 +5,9 @@ import { createHttpApi, ApiError } from '../src/api/client';
 import { createDemoApi } from '../src/api/demo';
 import type { Product } from '../src/api/types';
 
+import { couponSummary } from '../src/lib/store';
+import { displayValue } from '../src/lib/settings';
+
 describe('chạm thông báo → đúng màn hình', () => {
   it('mở đúng đơn từ dữ liệu push (dùng cho cả mở lạnh khi app đóng)', () => {
     expect(routeForNotificationData({ type: 'order', orderId: 10428, url: 'wooadmin://orders/10428' })).toBe('/orders/10428');
@@ -109,5 +112,38 @@ describe('chế độ demo', () => {
     expect(dash.timezone).toBe('America/New_York');
     const processing = await api.listOrders({ status: 'processing' });
     expect(processing.items.every((o) => o.status === 'processing')).toBe(true);
+  }, 20000);
+});
+
+describe('quản lý cửa hàng (demo + hiển thị)', () => {
+  it('mô tả mã giảm giá dễ hiểu', () => {
+    expect(couponSummary({ discountType: 'percent', amount: '10', freeShipping: false, minimumAmount: '' }, 'USD')).toBe('Giảm 10%');
+    expect(couponSummary({ discountType: 'fixed_cart', amount: '15', freeShipping: true, minimumAmount: '80' }, 'USD')).toBe('Giảm 15,00 USD cho đơn · miễn phí vận chuyển · đơn từ 80,00 USD');
+  });
+  it('hiển thị giá trị cài đặt theo kiểu trường', () => {
+    const base = { id: 'x', label: 'X', description: '', tip: '', default: null, placeholder: '', editable: true };
+    expect(displayValue({ ...base, type: 'checkbox', value: 'yes', options: null }, 'yes')).toBe('Bật');
+    expect(displayValue({ ...base, type: 'select', value: 'USD', options: { USD: 'Đô la Mỹ' } }, 'USD')).toBe('Đô la Mỹ');
+    expect(displayValue({ ...base, type: 'password', value: 'abc', options: null }, 'abc')).toBe('••••••');
+  });
+  it('demo: sửa cài đặt, bật cổng thanh toán, tạo mã trùng bị chặn, báo cáo & live có dữ liệu', async () => {
+    const api = createDemoApi();
+    const g = await api.settingGroup('general');
+    const r = await api.updateSettings('general', [{ id: 'woocommerce_store_city', value: 'Brooklyn' }]);
+    expect(r[0].value).toBe('Brooklyn');
+    expect(g.length).toBeGreaterThan(3);
+    await expect(api.updateSettings('products', [{ id: 'woocommerce_notify_low_stock_amount', value: 'abc' }])).rejects.toMatchObject({ kind: 'validation' });
+    const cod = await api.updatePaymentGateway('cod', { enabled: true });
+    expect(cod.enabled).toBe(true);
+    await expect(api.saveCoupon(null, { code: 'WELCOME10', amount: '5' })).rejects.toMatchObject({ kind: 'conflict' });
+    const c = await api.saveCoupon(null, { code: 'BF2026', amount: '20', discountType: 'percent' });
+    expect(c.code).toBe('bf2026');
+    const rep = await api.salesReport('30d');
+    expect(rep.byProduct.length).toBeGreaterThan(0);
+    expect(rep.tracking.enabled).toBe(true);
+    const live = await api.liveReport();
+    expect(live.visitors.enabled).toBe(true);
+    const cust = await api.listCustomers();
+    expect(cust.items[0].ordersCount).toBeGreaterThan(0);
   }, 20000);
 });

@@ -93,6 +93,9 @@ export function presentProduct(shop: ShopRow, p: WooProduct, parent?: WooProduct
     images: (p.images ?? []).map((i) => i.src),
     categories: p.categories ?? [],
     shortDescription: p.short_description ?? '',
+    description: (p as any).description ?? '',
+    featured: !!(p as any).featured,
+    catalogVisibility: (p as any).catalog_visibility ?? 'visible',
     dateModified: p.date_modified_gmt,
     permalink: p.permalink ?? null,
     adminUrl: adminProductUrl(shop, p.type === 'variation' ? (parent?.id ?? p.parent_id ?? p.id) : p.id),
@@ -273,4 +276,48 @@ export async function publishProduct(shop: ShopRow, id: number) {
   const p = (await clientFor(shop).put<WooProduct>(`/wc/v3/products/${id}`, { status: 'publish' })).data;
   await upsertProduct(shop.id, p);
   return { product: presentProduct(shop, p) };
+}
+
+export interface ProductInfoPatch {
+  name?: string;
+  sku?: string;
+  shortDescription?: string;
+  description?: string;
+  status?: 'draft' | 'publish' | 'private' | 'pending';
+  categoryIds?: number[];
+  featured?: boolean;
+  catalogVisibility?: 'visible' | 'catalog' | 'search' | 'hidden';
+  expectedModified?: string;
+  force?: boolean;
+}
+
+/** Sửa thông tin chung của sản phẩm (không gồm giá/tồn kho — xem updateProductOrVariation) */
+export async function updateProductInfo(shop: ShopRow, id: number, patch: ProductInfoPatch) {
+  const client = clientFor(shop);
+  const current = (await client.get<WooProduct>(`/wc/v3/products/${id}`)).data;
+  if (!patch.force && patch.expectedModified && current.date_modified_gmt !== patch.expectedModified) {
+    await upsertProduct(shop.id, current);
+    throw new AppError(409, 'conflict', 'Sản phẩm vừa được sửa trên website. Tải lại trước khi ghi đè.', { current: presentProduct(shop, current) });
+  }
+  const body: Record<string, unknown> = {};
+  if (patch.name !== undefined) {
+    if (!patch.name.trim()) throw new AppError(400, 'bad_request', 'Tên sản phẩm không được để trống');
+    body.name = patch.name.trim();
+  }
+  if (patch.sku !== undefined) body.sku = patch.sku.trim();
+  if (patch.shortDescription !== undefined) body.short_description = patch.shortDescription;
+  if (patch.description !== undefined) body.description = patch.description;
+  if (patch.status !== undefined) body.status = patch.status;
+  if (patch.categoryIds !== undefined) body.categories = patch.categoryIds.map((c) => ({ id: c }));
+  if (patch.featured !== undefined) body.featured = patch.featured;
+  if (patch.catalogVisibility !== undefined) body.catalog_visibility = patch.catalogVisibility;
+  try {
+    const p = (await client.put<WooProduct>(`/wc/v3/products/${id}`, body)).data;
+    await upsertProduct(shop.id, p);
+    return { product: presentProduct(shop, p) };
+  } catch (e) {
+    if (e instanceof WooError && e.wooCode === 'product_invalid_sku') throw new AppError(409, 'duplicate_sku', 'SKU đã tồn tại trên website.');
+    if (e instanceof WooError && e.kind === 'invalid') throw new AppError(422, 'woo_invalid', e.message);
+    throw e;
+  }
 }
